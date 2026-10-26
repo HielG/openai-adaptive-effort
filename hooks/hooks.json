@@ -1,0 +1,10 @@
+{
+  "description": "Advisory classification only. This hook does not change host effort, block prompts, or send data anywhere.",
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [
+        { "type": "command", "command": "node \"${PLUGIN_ROOT}/hooks/advise.mjs\"", "timeout": 3, "statusMessage": "Classifying effort (advisory)" }
+      ] }
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "openai-adaptive-effort",
+  "version": "0.1.0",
+  "description": "Advisory effort classification for desktop Codex, with a companion runner that applies real per-turn reasoning settings.",
+  "author": { "name": "Hiel Gagarin" },
+  "license": "MIT",
+  "keywords": ["codex", "reasoning", "efficiency"],
+  "extensions": {
+    "com.openai": {
+      "requires_local_executor": true,
+      "hooks": "./hooks/hooks.json",
+      "interface": {
+        "displayName": "Adaptive Effort for OpenAI",
+        "shortDescription": "Effort advice in desktop; real routing in the companion runner.",
+        "developerName": "Hiel Gagarin",
+        "category": "Productivity"
+      }
+    }
+  }
+}

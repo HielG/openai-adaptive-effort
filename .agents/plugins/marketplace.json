@@ -1,0 +1,12 @@
+{
+  "name": "hiel-openai-tools",
+  "interface": { "displayName": "Hiel OpenAI Tools" },
+  "plugins": [
+    {
+      "name": "openai-adaptive-effort",
+      "source": { "source": "local", "path": "./" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Productivity"
+    }
+  ]
+}
