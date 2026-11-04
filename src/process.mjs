@@ -42,12 +42,15 @@ export async function resolveCodex(explicit, env = process.env) {
   throw new Error('Codex was not found. Install the official CLI or pass --codex /path/to/codex');
 }
 
-export async function discoverModels(executable, {env=process.env,timeoutMs=15000}={}) {
+export async function discoverModels(executable, {env=process.env,timeoutMs=15000,signal}={}) {
+  if(signal?.aborted)throw new Error('Model discovery cancelled');
   const child=spawn(executable.command,[...executable.args,'app-server'],{env,shell:false,windowsHide:true,detached:process.platform!=='win32',stdio:['pipe','pipe','pipe']});
   let next=0,closed=false,stderr='';
   const pending=new Map();
   const lines=createInterface({input:child.stdout});
   const rejectAll=error=>{for(const {reject} of pending.values()) reject(error);pending.clear();};
+  const abort=()=>{rejectAll(new Error('Model discovery cancelled'));void stopTree(child);};
+  signal?.addEventListener('abort',abort,{once:true});
   const timer=setTimeout(()=>{rejectAll(new Error('Model discovery timed out'));void stopTree(child);},timeoutMs);
   child.stderr.on('data',b=>{stderr=(stderr+b).slice(-4096);});
   child.on('error',e=>rejectAll(new Error(`Codex could not start: ${e.message}`)));
@@ -81,7 +84,7 @@ export async function discoverModels(executable, {env=process.env,timeoutMs=1500
     // Do not include stderr: platform diagnostics can contain local paths or secrets.
     throw error;
   } finally {
-    clearTimeout(timer);lines.close();child.stdin.end();if(!closed)await stopTree(child);child.stdout.destroy();child.stderr.destroy();child.stdin.destroy();
+    clearTimeout(timer);signal?.removeEventListener('abort',abort);lines.close();child.stdin.end();if(!closed)await stopTree(child);child.stdout.destroy();child.stderr.destroy();child.stdin.destroy();
   }
 }
 
@@ -90,19 +93,23 @@ export function execArgs({model,effort,threadId}) {
   return threadId?['exec','resume',...settings,threadId,'-']:['exec',...settings,'-'];
 }
 
-export async function executeTurn(executable,{args,prompt,cwd,env=process.env,timeoutMs=300000,onEvent=async()=>{},stdout=process.stdout,stderr=process.stderr}) {
+export async function executeTurn(executable,{args,prompt,cwd,env=process.env,timeoutMs=300000,onEvent=async()=>{},stdout=process.stdout,stderr=process.stderr,signal}) {
+  if(signal?.aborted)return {code:null,signal:null,timedOut:false,cancelled:true,startError:null,protocolError:null};
   const child=spawn(executable.command,[...executable.args,...args],{cwd,env,shell:false,windowsHide:true,detached:process.platform!=='win32',stdio:['pipe','pipe','pipe']});
-  let timedOut=false,startError=null,protocolError=null;
+  let timedOut=false,cancelled=false,startError=null,protocolError=null;
   let stopping;
   const terminate=()=>stopping??=stopTree(child);
   const lines=createInterface({input:child.stdout});
-  const interrupt=()=>{
-    timedOut=true;
+  const interrupt=(timeout=false)=>{
+    if(timedOut||cancelled)return;
+    timedOut=timeout;cancelled=!timeout;
     // EOF can be held by an orphaned descendant after its launcher exits.
     lines.close();child.stdout.destroy();child.stderr.destroy();child.stdin.destroy();void terminate();
   };
-  process.once('SIGINT',interrupt);process.once('SIGTERM',interrupt);
-  const timer=setTimeout(interrupt,timeoutMs);
+  const abort=()=>interrupt(false);
+  process.once('SIGINT',abort);process.once('SIGTERM',abort);
+  signal?.addEventListener('abort',abort,{once:true});
+  const timer=setTimeout(()=>interrupt(true),timeoutMs);
   const closed=new Promise(resolve=>{
     child.once('error',e=>{startError=e;resolve({code:null,signal:null});});
     child.once('exit',(code,signal)=>resolve({code,signal}));
@@ -110,9 +117,10 @@ export async function executeTurn(executable,{args,prompt,cwd,env=process.env,ti
   child.stderr.on('data',b=>stderr.write(b));
   child.stdin.on('error',e=>{startError??=e;});
   child.stdin.end(prompt);
+  if(signal?.aborted)abort();
   try{
     for await(const line of lines){
-      if(timedOut)break;
+      if(timedOut||cancelled)break;
       if(!line.trim())continue;
       if(line.length>4*1024*1024){protocolError='Codex event exceeds limit';void terminate();break;}
       let event;try{event=JSON.parse(line);}catch{protocolError='Invalid JSONL from Codex';void terminate();break;}
@@ -121,8 +129,8 @@ export async function executeTurn(executable,{args,prompt,cwd,env=process.env,ti
       if(event.type==='error'||event.type==='turn.failed')stderr.write('Codex reported a failed turn; inspect its terminal diagnostics before continuing.\n');
     }
     const exit=await closed;
-    return {...exit,timedOut,startError:startError?.message??null,protocolError};
+    return {...exit,timedOut,cancelled,startError:startError?.message??null,protocolError};
   } finally {
-    clearTimeout(timer);process.removeListener('SIGINT',interrupt);process.removeListener('SIGTERM',interrupt);await terminate();lines.close();child.stdout.destroy();child.stderr.destroy();child.stdin.destroy();
+    clearTimeout(timer);process.removeListener('SIGINT',abort);process.removeListener('SIGTERM',abort);signal?.removeEventListener('abort',abort);await terminate();lines.close();child.stdout.destroy();child.stderr.destroy();child.stdin.destroy();
   }
 }

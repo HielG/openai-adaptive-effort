@@ -129,6 +129,30 @@ Expected categories: `social`, then `complex`. This local check makes no model r
 
 ## Use the runner
 
+### Windows desktop app
+
+The native Windows app provides the runner in a separate chat window with model selection and a live effort badge. Open **Adaptive Effort.exe** in the desktop release folder, or use the **Adaptive Effort** Desktop shortcut when installed. Keep the executable together with its `desktop`, `src`, and `desktop.settings.json` files.
+
+1. Choose the workspace with **Browse**.
+2. Select Terra, Sol, or Astra, then an exact available model and its baseline. A family absent from your Codex catalog is shown as unavailable; the app does not substitute another model.
+3. Leave **This turn** on **Auto** to adjust effort automatically. An explicit effort applies once and resets to Auto.
+4. Type a message and click **Send** or press **Ctrl+Enter**. The badge shows the effort supplied to Codex and the running/completed state; turn token counts appear below.
+5. Use **New chat** to change workspace, model, or baseline. These are frozen within a running conversation.
+
+**Stop** cancels the active request and retires its owned process tree. An interrupted chat remains uncertain and cannot send again; inspect its displayed session file before using **Restart runner** to start a separate new chat. No prompt is automatically replayed. Closing the window also stops the owned runner. The app stores only runner metadata; chat text stays in window memory, while Codex retains its own normal history. Reopening the app starts a new UI conversation.
+
+This app uses your installed Node.js and authenticated Codex CLI. Model availability depends on that client/account. Sending consumes model usage and runs with the runner's read-only filesystem sandbox and approval policy `never`. It is a separate interface and does not modify existing Codex desktop chats. It opens no local web server and changes no global model settings. If the app cannot start Node, correct its generated `desktop.settings.json` or rebuild after installing Node; the failed startup does not send a model request.
+
+Developers on Windows can build it without npm dependencies:
+
+```powershell
+npm run desktop:build
+```
+
+The build uses Windows' installed .NET Framework compiler and writes `releases/desktop/Adaptive Effort.exe`. `node scripts/check-desktop-ui.mjs` exercises the native controls with synthetic Codex subprocesses and makes no inference requests.
+
+### Command-line runner
+
 The runner works directly from the clone; installing the advisory plugin is optional. Run these commands from the repository directory.
 
 First, inspect the model catalog:

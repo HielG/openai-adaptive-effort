@@ -16,6 +16,26 @@ for(const mode of ['error','exit','bad-json','repeat-cursor','hang'])test(`catal
   await assert.rejects(discoverModels(executable,{env:{...process.env,FAKE_MODE:mode},timeoutMs:300}));
 });
 test('spawn errors reject without a hang',async()=>assert.rejects(discoverModels({command:path.join(os.tmpdir(),'not-existing-codex.exe'),args:[]},{timeoutMs:300})));
+
+test('pre-aborted discovery and execution never spawn',async()=>{
+  const controller=new AbortController();controller.abort();
+  const missing={command:path.join(os.tmpdir(),'must-not-spawn-codex.exe'),args:[]};
+  await assert.rejects(discoverModels(missing,{signal:controller.signal}),/cancelled/);
+  const result=await executeTurn(missing,{args:[],prompt:'synthetic',cwd:os.tmpdir(),signal:controller.signal});
+  assert.equal(result.cancelled,true);assert.equal(result.startError,null);
+});
+
+test('AbortSignal stops model discovery rather than waiting for its timeout',async()=>{
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),100);
+  const started=Date.now();
+  try{await assert.rejects(discoverModels(executable,{env:{...process.env,FAKE_MODE:'hang'},signal:controller.signal,timeoutMs:4000}),/cancelled/);assert.ok(Date.now()-started<2500);}finally{clearTimeout(timer);}
+});
+
+test('AbortSignal stops execution and distinguishes cancellation from timeout',async()=>{
+  const controller=new AbortController();
+  const result=await executeTurn(executable,{args:['exec'],prompt:'synthetic',cwd:os.tmpdir(),env:{...process.env,FAKE_MODE:'exec-hang'},signal:controller.signal,timeoutMs:4000,stdout:sink,stderr:sink,onEvent:async event=>{if(event.type==='thread.started')controller.abort();}});
+  assert.equal(result.cancelled,true);assert.equal(result.timedOut,false);
+});
 test('literal multiline Unicode/shell syntax reaches child stdin without evaluation',async t=>{
   const dir=await mkdtemp(path.join(os.tmpdir(),'adaptive transport '));t.after(()=>rm(dir,{recursive:true,force:true}));
   const capture=path.join(dir,'capture.json');const prompt='Hello 世界\n$(write-secret) `x`; & | "quotes"\n--dangerously-bypass-approvals-and-sandbox';

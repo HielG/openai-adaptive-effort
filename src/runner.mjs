@@ -4,9 +4,11 @@ import { route, capabilities, parseUsage, usageDelta } from './policy.mjs';
 import { discoverModels, executeTurn, execArgs } from './process.mjs';
 import { statePath, lockState, readState, atomicWrite, validThread } from './state.mjs';
 
-export async function planTurn({prompt,model,baseline,manual,previous,policy,executable,env,discover=discoverModels}) {
+export async function planTurn({prompt,model,baseline,manual,previous,policy,executable,env,signal,discover=discoverModels}) {
   if(typeof model!=='string'||!model||model.startsWith('-'))throw new Error('Choose an explicit --model from the Codex catalog');
-  const catalog=await discover(executable,{env});
+  if(signal?.aborted)throw new Error('Request cancelled before execution');
+  const catalog=await discover(executable,{env,signal});
+  if(signal?.aborted)throw new Error('Request cancelled before execution');
   const matches=catalog.filter(m=>m.model===model);
   if(matches.length!==1)throw new Error('The chosen model is not uniquely present in the catalog; no substitute model will be selected');
   const supported=capabilities(matches[0]);
@@ -29,7 +31,7 @@ export async function runTurn(options,dependencies={}) {
     if(state&&options.model&&state.model!==options.model)throw new Error('Model is frozen for this session; choose a new state file to use another model');
     if(state&&options.baseline&&state.baseline!==options.baseline)throw new Error('Baseline is frozen for this session; choose a new state file to change it');
     const model=state?.model??options.model,baseline=state?.baseline??options.baseline;
-    decision=await planTurn({prompt,model,baseline,manual:options.manual,previous:state?.previous,policy,executable,env,discover:dependencies.discover});
+    decision=await planTurn({prompt,model,baseline,manual:options.manual,previous:state?.previous,policy,executable,env,signal:options.signal,discover:dependencies.discover});
     if(options.dryRun)return {stateFile:file,decision,args:execArgs({model,effort:decision.effort,threadId:state?.threadId}),dryRun:true};
     state??={version:1,workspace,model,baseline,threadId:null,previous:null,status:'idle',turns:[],createdAt:new Date().toISOString()};
     attempt={attemptId:randomUUID(),at:new Date().toISOString(),effort:decision.effort,baseline,kind:decision.kind,reason:decision.reason,mode:decision.mode,promptChars:prompt.length,usage:null,outcome:'uncertain'};
@@ -54,10 +56,10 @@ export async function runTurn(options,dependencies={}) {
       if(event.type==='turn.failed'||event.type==='error')failed=true;
     };
     const execute=dependencies.execute??executeTurn;
-    const exit=await execute(executable,{args:execArgs({model,effort:decision.effort,threadId:expectedThread}),prompt,cwd:workspace,env,timeoutMs,onEvent,stdout,stderr});
+    const exit=await execute(executable,{args:execArgs({model,effort:decision.effort,threadId:expectedThread}),prompt,cwd:workspace,env,timeoutMs,onEvent,stdout,stderr,signal:options.signal});
     attempt.durationMs=Date.now()-Date.parse(attempt.at);
     attempt.exitCode=exit.code;attempt.timedOut=exit.timedOut;
-    const success=exit.code===0&&!exit.signal&&!exit.timedOut&&!exit.startError&&!exit.protocolError&&!failed&&!invalid&&started&&terminal;
+    const success=exit.code===0&&!exit.signal&&!exit.timedOut&&!exit.cancelled&&!exit.startError&&!exit.protocolError&&!failed&&!invalid&&started&&terminal;
     const cumulative=success?parseUsage(terminal?.usage):null;
     attempt.usage=success?usageDelta(cumulative,expectedThread?state.cumulativeUsage??null:undefined):null;
     state.cumulativeUsage=cumulative;
