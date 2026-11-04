@@ -77,6 +77,8 @@ The model and baseline stay fixed for the session. Unknown models or unsupported
 
 The model catalog is queried at runtime; there is no hard-coded current model list. Unsupported/manual efforts and unknown models are rejected rather than silently substituted. Automatic routing does not enter `ultra`, which may change delegation behavior. Models/efforts available to your account can differ from the installed CLI's capability catalog. Heuristics can misclassify; use the manual override for consequential work or frozen contracts.
 
+Classification uses the request surrounding Markdown code and quotes. Keywords inside fenced code (backticks or tildes), inline code, indented code, and block quotes do not themselves trigger planning, review, or deep reasoning. Code-only and quote-only messages keep the baseline. Repeated identical complexity cues count once; distinct cues still raise effort. For example, ``Explain `plan` and `review` `` stays ordinary work, while `Debug this` followed by code remains complex. This is a lightweight English-language heuristic, not a full Markdown parser or a model-based intent detector.
+
 ## Install for OpenAI Codex
 
 ### 1. Register the local marketplace

@@ -12,6 +12,56 @@ for(const [prompt,kind] of [
   ['Thanks, now review this change','review'],['perfect! save the report','work'],['你好','trivial']
 ])test(`classifies ${JSON.stringify(prompt)}`,()=>assert.equal(classify(prompt).kind,kind));
 test('long unknown instructions stay at baseline rather than taking a cheap path',()=>assert.equal(classify('z'.repeat(1000)).kind,'work'));
+
+for (const [prompt,kind] of [
+  ['Explain `plan` and `review` variables','work'],
+  ['What does this do?\n```js\n// plan review security migration\n```','work'],
+  ['What does this do?\n~~~js\n// architecture review migration\n~~~','work'],
+  ['Explain this\n```text\nthink carefully, exhaustive review\n```','work'],
+  ['Explain this\n```text\narchitecture review migration','work'],
+  ['Explain this\n````text\n```\narchitecture review migration\n````','work'],
+  ['Explain this\n```text\n~~~\narchitecture review migration\n```','work'],
+  ['Explain this\n```text\n```not a closing fence\narchitecture migration review\n```','work'],
+  ['Explain this\n      architecture review migration','work'],
+  ['Explain this\n\tarchitecture review migration','work'],
+  ['    review architecture migration','work'],
+  ['\tthink carefully','work'],
+  ['\n    review architecture migration\n','work'],
+  ['Explain this\n\t    review architecture migration','work'],
+  ['Explain ``debug`','work'],
+  ['Explain ``plan `review` migration``','work'],
+  ['```review```\nPlan the change','planning'],
+  ['Explain the quote\n> architecture review migration','work'],
+  ['> review the architecture and migration','work'],['> hello','work'],['> yes','work'],
+  ['`hello`','work'],['```\nhello\n```','work'],
+  ['Review this\n```js\nconst plan = "migration architecture";\n```','review'],
+  ['Plan the change\n```js\nconst review = "migration architecture";\n```','planning'],
+  ['Brainstorm names for `review`','ideation'],
+  ['Debug this\n~~~js\nthrow new Error();\n~~~','complex'],
+  ['Think carefully about `hello`','complex'],
+  ['Explain this\n```js\nconst x = 1;\n```\nPlan the next steps','planning'],
+  ['Explain this\r\n~~~text\r\nreview migration architecture\r\n~~~','work'],
+  ['debug debug DEBUG','work'],
+  ['investigate investigate investigate','work'],
+  ['Investigate security and concurrency','complex']
+]) test(`classifies request intent ${JSON.stringify(prompt)}`,()=>assert.equal(classify(prompt).kind,kind));
+
+test('pasted context length does not turn two request cues into complex work',()=>{
+  assert.equal(classify('Explain migration performance\n> '+'x'.repeat(1000)).kind,'work');
+});
+
+test('distinct cue thresholds remain configurable',()=>{
+  const policy=resolvePolicy({complexCues:2});
+  assert.equal(classify('debug debug',policy).kind,'work');
+  assert.equal(classify('debug concurrency',policy).kind,'complex');
+});
+
+test('intent classification drives routing while preserving manual choices',()=>{
+  const prompt='Explain `review` and `plan`';
+  assert.equal(route(prompt,{supported,baseline:'medium',previous:'max'}).effort,'medium');
+  assert.equal(route(prompt,{supported,baseline:'medium',manual:'high'}).effort,'high');
+  assert.equal(route('> review architecture migration',{supported,baseline:'medium'}).effort,'medium');
+});
 test('configuration validates fields and values',()=>{
   assert.equal(resolvePolicy({reviewEffort:'high'}).reviewEffort,'high');
   for(const raw of [{unknown:1},{longChars:NaN},{complexCues:-1},{socialEffort:'super'},JSON.parse('{"__proto__":3}')])assert.throws(()=>resolvePolicy(raw));

@@ -10,6 +10,50 @@ const planning = /\b(?:plan|plans|planning|roadmap\w*|milestone\w*|scope|phases?
 const ideation = /\b(?:brainstorm\w*|ideat\w*|idealiz\w*|concept\w*|ideas?|vision|positioning|value proposition|differentiat\w*|narrative|personas?|business models?|go-to-market|pitch\w*|enrich\w*)\b/g;
 const review = /\b(?:review\w*|audit\w*|verif\w*|critique\w*)\b/g;
 const count = (text, expression) => (text.match(expression) || []).length;
+function codeSpans(line) {
+  const runs = [...line.matchAll(/`+/g)];
+  const next = new Map();
+  for (let i = runs.length - 1; i >= 0; i--) {
+    runs[i].closing = next.get(runs[i][0].length);
+    next.set(runs[i][0].length, i);
+  }
+  let cursor = 0;
+  let text = '';
+  let code = false;
+  for (let i = 0; i < runs.length; i++) {
+    const closing = runs[i].closing;
+    if (closing === undefined) continue;
+    text += line.slice(cursor, runs[i].index) + ' ';
+    cursor = runs[closing].index + runs[closing][0].length;
+    code = true;
+    i = closing;
+  }
+  return {text:text + line.slice(cursor),code};
+}
+// Pasted source is context, not a request to plan/review/think harder.
+function requestText(text) {
+  let fence = null;
+  let code = false;
+  let quoted = false;
+  const lines = text.split(/\r?\n/).map(line => {
+    const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (fence) {
+      if (marker && marker[1][0] === fence.char && marker[1].length >= fence.length && !marker[2].trim()) fence = null;
+      return '';
+    }
+    if (marker && (marker[1][0] !== '`' || !marker[2].includes('`'))) {
+      fence = { char:marker[1][0], length:marker[1].length };
+      code = true;
+      return '';
+    }
+    if (/^ {0,3}>/.test(line)) { quoted = true; return ''; }
+    if (/^(?: {4}|\t)[ \t]*\S/.test(line)) { code = true; return ''; }
+    const inline = codeSpans(line);
+    code ||= inline.code;
+    return inline.text;
+  });
+  return { text:lines.join('\n'), code, quoted };
+}
 export function resolvePolicy(raw = {}) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Policy must be an object');
   const result = { ...DEFAULTS };
@@ -26,15 +70,17 @@ export function classify(prompt, policy = DEFAULTS) {
   if (typeof prompt !== 'string') throw new Error('Prompt must be text');
   const trimmed = prompt.trim();
   if (!trimmed) return { kind:'continue', reason:'empty' };
+  const request = requestText(prompt);
   const words = trimmed.replace(/[^\p{L}\p{N} ]/gu,' ').replace(/\s+/g,' ').trim().toLowerCase();
-  if (social.has(words)) return { kind:'social', reason:'social' };
-  if (continuation.has(words)) return { kind:'continue', reason:'answer' };
-  const lower = trimmed.toLowerCase();
-  const cues = count(lower, complexity);
+  if (!request.code && !request.quoted && social.has(words)) return { kind:'social', reason:'social' };
+  if (!request.code && !request.quoted && continuation.has(words)) return { kind:'continue', reason:'answer' };
+  const lower = request.text.toLowerCase();
+  if (!lower.trim()) return {kind:'work',reason:request.code?'code':'quoted-context'};
+  const cues = new Set(lower.match(complexity) || []).size;
   const judges = count(lower, judgment);
-  const code = trimmed.includes('```') || /(^|\n)\s{4,}\S/.test(trimmed);
+  const code = request.code;
   if (/(?:ultrathink|think (?:hard|harder|deeply|carefully)|max(?:imum)? (?:effort|thinking|reasoning)|deep dive|be (?:very )?thorough|exhaustive)/.test(lower)) return {kind:'complex',reason:'explicit-deep'};
-  if (cues >= policy.complexCues || (code && cues >= 1) || (trimmed.length >= policy.longChars && cues >= 2)) return {kind:'complex',reason:'complexity'};
+  if (cues >= policy.complexCues || (code && cues >= 1) || (request.text.length >= policy.longChars && cues >= 2)) return {kind:'complex',reason:'complexity'};
   if (count(lower,planning)) return {kind:'planning',reason:'planning'};
   if (count(lower,ideation)) return {kind:'ideation',reason:'ideation'};
   if (count(lower,review)) return {kind:'review',reason:'review'};
