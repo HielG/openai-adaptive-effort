@@ -12,7 +12,7 @@ if(args[0]==='app-server'){
       if(mode==='error'){console.log(JSON.stringify({id:req.id,error:{message:'synthetic error'}}));continue;}
       if(mode==='exit'){process.exit(2);}
       const cursor=req.params.cursor;
-      const data=[{model:cursor?'second-model':'chosen-model',supportedReasoningEfforts:['low','medium','high','max'].map(reasoningEffort=>({reasoningEffort}))}];
+      const data=mode==='families'?['gpt-6.1-terra','gpt-6.1-sol','gpt-6-astra'].map(model=>({model,defaultReasoningEffort:'medium',supportedReasoningEfforts:['low','medium','high','max'].map(reasoningEffort=>({reasoningEffort}))})):[{model:cursor?'second-model':'chosen-model',supportedReasoningEfforts:['low','medium','high','max'].map(reasoningEffort=>({reasoningEffort}))}];
       console.log(JSON.stringify({id:req.id,result:{data,nextCursor:mode==='paginate'&&!cursor?'next':mode==='repeat-cursor'?'same':null}}));
     }
   }
@@ -22,7 +22,7 @@ if(args[0]==='app-server'){
   if(mode==='orphan-pipe'){
     const child=spawn(process.execPath,['-e','setTimeout(()=>{},3000)'],{stdio:['ignore','inherit','ignore'],windowsHide:true});child.unref();
     console.log(JSON.stringify({type:'fixture.child',pid:child.pid}));
-  }else if(mode==='hang'){setInterval(()=>{},1000);}else if(mode==='bad-json'){console.log('not JSON');}else{
+  }else if(mode==='hang'){setInterval(()=>{},1000);}else if(mode==='bad-json'||mode==='exec-bad-json'){console.log('not JSON');}else{
     console.log(JSON.stringify({type:'thread.started',thread_id:'12345678-1234-1234-1234-123456789abc'}));
     console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'Synthetic OK'}}));
     console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:123,cached_input_tokens:50,output_tokens:10}}));

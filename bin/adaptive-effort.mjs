@@ -7,6 +7,7 @@ import { classify, resolvePolicy, summarize } from '../src/policy.mjs';
 import { resolveCodex, discoverModels } from '../src/process.mjs';
 import { runTurn } from '../src/runner.mjs';
 import { readState, statePath, recoverState } from '../src/state.mjs';
+import { FAMILIES, modelListing, indicatorEnabled, createIndicator } from '../src/display.mjs';
 
 const help=`Adaptive Effort for OpenAI / Codex
 
@@ -22,6 +23,8 @@ Options:
   --codex FILE          Official Codex executable or bin/codex.js
   --timeout-ms N        Turn deadline (default: 300000)
   --dry-run             Plan a run without inference or session-state changes
+  --indicator MODE      auto (default), on, or off; compact runner effort badge
+  --family FAMILY       Filter models listing: terra, sol, or astra
   --acknowledge-uncertain  Recover captured session without replaying its prompt
 
 This runner applies real per-invocation effort overrides in its own Codex thread.
@@ -29,7 +32,7 @@ The desktop plugin hook is advisory; it does not change the active chat's effort
 No global config, model-switch, unsafe sandbox, or hook-trust bypass is performed.
 `;
 const flags=new Set(['dry-run','acknowledge-uncertain','help']);
-const values=new Set(['model','baseline','effort','workspace','state','prompt-file','policy','codex','timeout-ms']);
+const values=new Set(['model','baseline','effort','workspace','state','prompt-file','policy','codex','timeout-ms','indicator','family']);
 export function parseArgs(args){
   const command=args[0]??'help';const opts={};
   for(let i=1;i<args.length;i++){
@@ -54,6 +57,8 @@ export async function main(args=process.argv.slice(2)){
   const {command,opts}=parseArgs(args);
   if(['help','--help','-h'].includes(command)||opts.help){process.stdout.write(help);return;}
   if(!['classify','models','plan','run','report','recover'].includes(command))throw new Error('Unknown command; use --help');
+  const showIndicator=indicatorEnabled(opts.indicator);
+  if(opts.family!==undefined&&(command!=='models'||!FAMILIES.includes(opts.family)))throw new Error('--family requires models and terra, sol, or astra');
   const workspace=path.resolve(opts.workspace??process.cwd());
   if(command==='report'||command==='recover'){
     const file=await statePath(workspace,opts.state);
@@ -66,15 +71,20 @@ export async function main(args=process.argv.slice(2)){
   const executable=await resolveCodex(opts.codex);
   if(command==='models'){
     const models=await discoverModels(executable);
-    console.log(JSON.stringify({note:'Capability catalog, not proof of account entitlement or paid inference.',models:models.map(m=>({model:m.model,default:m.defaultReasoningEffort,supported:m.supportedReasoningEfforts}))},null,2));return;
+    console.log(JSON.stringify(modelListing(models,opts.family),null,2));return;
   }
   const prompt=await input(opts['prompt-file']);
   if(!prompt.trim())throw new Error('A nonempty prompt is required for plan/run');
   const timeoutMs=opts['timeout-ms']===undefined?300000:Number(opts['timeout-ms']);
   if(!Number.isSafeInteger(timeoutMs)||timeoutMs<100||timeoutMs>86400000)throw new Error('Invalid timeout');
   const common={prompt,model:opts.model,baseline:opts.baseline,manual:opts.effort,workspace,state:opts.state,policy,executable,timeoutMs};
-  const result=await runTurn({...common,dryRun:command==='plan'||opts['dry-run']});
-  console.error(JSON.stringify(result,null,2));
+  const compact=showIndicator&&command==='run'&&!opts['dry-run'];
+  const indicator=createIndicator({enabled:compact});
+  let result;
+  try{
+    result=await runTurn({...common,dryRun:command==='plan'||opts['dry-run'],...(compact?{onStatus:status=>indicator.update(status),stdout:indicator.wrap(process.stdout),stderr:indicator.wrap(process.stderr)}:{})});
+  }finally{indicator.clear();}
+  if(!compact)console.error(JSON.stringify(result,null,2));
   if(result.outcome==='uncertain')process.exitCode=1;
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){

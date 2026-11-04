@@ -19,7 +19,9 @@ export async function runTurn(options,dependencies={}) {
   const workspace=await realpath(options.workspace??process.cwd());
   const file=await statePath(workspace,options.state);
   const release=await lockState(file);
-  let state,attempt;
+  let state,attempt,decision;
+  // Display failures must never change execution, state, or retry semantics.
+  const notify=status=>{try{if(decision)options.onStatus?.({...decision,status});}catch{/* optional display */}};
   try{
     state=await readState(file);
     if(state?.status!=='idle'&&state)throw new Error('Previous execution is uncertain. Inspect its effects, then use recover; never blindly retry.');
@@ -27,19 +29,21 @@ export async function runTurn(options,dependencies={}) {
     if(state&&options.model&&state.model!==options.model)throw new Error('Model is frozen for this session; choose a new state file to use another model');
     if(state&&options.baseline&&state.baseline!==options.baseline)throw new Error('Baseline is frozen for this session; choose a new state file to change it');
     const model=state?.model??options.model,baseline=state?.baseline??options.baseline;
-    const decision=await planTurn({prompt,model,baseline,manual:options.manual,previous:state?.previous,policy,executable,env,discover:dependencies.discover});
+    decision=await planTurn({prompt,model,baseline,manual:options.manual,previous:state?.previous,policy,executable,env,discover:dependencies.discover});
     if(options.dryRun)return {stateFile:file,decision,args:execArgs({model,effort:decision.effort,threadId:state?.threadId}),dryRun:true};
     state??={version:1,workspace,model,baseline,threadId:null,previous:null,status:'idle',turns:[],createdAt:new Date().toISOString()};
     attempt={attemptId:randomUUID(),at:new Date().toISOString(),effort:decision.effort,baseline,kind:decision.kind,reason:decision.reason,mode:decision.mode,promptChars:prompt.length,usage:null,outcome:'uncertain'};
     state.status='running';state.ownerPid=process.pid;state.pendingAttempt=attempt;
     await atomicWrite(file,state);
-    stderr.write(`Adaptive effort: ${decision.effort} (${decision.kind}; baseline ${baseline}; model ${model})\n`);
+    if(options.onStatus)notify('starting');
+    else stderr.write(`Adaptive effort: ${decision.effort} (${decision.kind}; baseline ${baseline}; model ${model})\n`);
     let terminal=null,failed=false,invalid=false,started=false,terminalJson=null;
     const expectedThread=state.threadId;
     const onEvent=async event=>{
       if(event.type==='thread.started'){
         const id=event.thread_id;
         if(!validThread(id)||(expectedThread&&id!==expectedThread)||(state.threadId&&state.threadId!==id)){invalid=true;return;}
+        if(!started)notify('running');
         started=true;state.threadId=id;await atomicWrite(file,state);
       }
       if(event.type==='turn.completed'){
@@ -62,11 +66,13 @@ export async function runTurn(options,dependencies={}) {
     if(success)state.previous=decision.effort;
     state.turns.push(attempt);delete state.pendingAttempt;
     await atomicWrite(file,state);
+    notify(attempt.outcome);
     return {stateFile:file,threadId:state.threadId,decision,outcome:attempt.outcome,usage:attempt.usage,exit};
   }catch(error){
     if(state&&attempt&&state.pendingAttempt){
       state.status='uncertain';attempt.failure='Runner interrupted before a verified terminal result';state.turns.push(attempt);delete state.pendingAttempt;
       try{await atomicWrite(file,state);}catch{/* original failure remains authoritative; on-disk running state still blocks retry */}
+      notify('uncertain');
     }
     throw error;
   }finally{await release();}

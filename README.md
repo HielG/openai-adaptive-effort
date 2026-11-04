@@ -137,6 +137,16 @@ First, inspect the model catalog:
 node bin/adaptive-effort.mjs models
 ```
 
+The listing includes family labels and availability counts for Terra, Sol, and Astra. All use their exact catalog model IDs and their own supported effort ranges; no fixed model/version table or automatic model switch is used. Filter the listing with:
+
+```powershell
+node bin/adaptive-effort.mjs models --family terra
+node bin/adaptive-effort.mjs models --family sol
+node bin/adaptive-effort.mjs models --family astra
+```
+
+An empty list means that family is not exposed by this Codex client/provider. Update or choose the appropriate installed client with `--codex` if needed; the runner cannot grant access to an absent model. Astra routing is covered by catalog fixtures, while actual availability still depends on your client and account.
+
 Choose an exact model ID and a supported baseline from that output. Replace `YOUR_CATALOG_MODEL` below with your chosen ID and change `high` if that model requires another supported baseline. A catalog entry does not prove your account can execute that model.
 
 Preview the chosen effort without invoking a model:
@@ -155,6 +165,19 @@ node bin/adaptive-effort.mjs report
 ```
 
 `run` invokes Codex and uses your normal account limits or API billing, depending on your Codex authentication. The runner does not read, copy, or store credentials. Its terminal status shows the actual effort it passes to Codex. `report` reads local usage metadata without making a model request.
+
+### Compact effort indicator
+
+In an interactive terminal, `run` automatically shows a small updating badge:
+
+```text
+[Sol | LOW | running]
+[Sol | MAX | completed]
+```
+
+The badge shows the selected model family, the effort passed for that invocation, and its status. It updates on each runner turn, clears before assistant/diagnostic output, and finishes on its own line. `uncertain` means the turn did not produce a verified successful result; inspect it before recovery. The badge does not measure internal reasoning tokens or change the effort in this desktop chat.
+
+Use `--indicator on` to force compact status (plain lines when output is redirected), or `--indicator off` for the previous verbose stderr metadata. The default `--indicator auto` enables the badge only on a terminal; redirected output keeps the previous metadata format. Compact mode replaces the final verbose metadata dump; session metadata remains available through `report`. `plan` and dry-runs still print their JSON and do not display a running badge. `NO_COLOR` disables badge colors.
 
 Use `--prompt-file prompt.txt` for exact multiline Unicode text, especially in Windows PowerShell. `--workspace DIR` selects the working directory; `--state .adaptive-effort/another.json` selects a separate runner session. State must remain inside that workspace. New sessions require both model and baseline. Existing sessions preserve them; use a new state file to intentionally change either. `plan`/`run --dry-run` query capabilities and show the chosen arguments without inference or a session-state update.
 

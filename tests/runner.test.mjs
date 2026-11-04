@@ -34,6 +34,44 @@ test('catalog defaults do not silently choose a model or baseline',async()=>{
   await assert.rejects(planTurn({prompt:'hi',model:'chosen-model',executable:{},discover}));
   await assert.rejects(planTurn({prompt:'hi',baseline:'medium',executable:{},discover}));
 });
+
+for(const [model,efforts,baseline,light,deep] of [
+  ['gpt-6.1-terra',['low','medium','high'],'medium','low','high'],
+  ['gpt-6.1-sol',['medium','high','max'],'medium','medium','max'],
+  ['gpt-6-astra',['high','max'],'high','high','max']
+])test(`exact catalog model ${model} uses its own supported efforts`,async t=>{
+  const workspace=await temp(t),args=[];
+  const discover=async()=>[{model,supportedReasoningEfforts:efforts.map(reasoningEffort=>({reasoningEffort}))}];
+  const execute=async(exe,o)=>{args.push(o.args);return emit(o);};
+  const options={...opts(workspace),model,baseline};
+  const a=await runTurn({...options,prompt:'hello'},{discover,execute});assert.equal(a.decision.effort,light);
+  const b=await runTurn({...options,prompt:'review this'},{discover,execute});assert.equal(b.decision.effort,deep);
+  for(const values of args)assert.equal(values[values.indexOf('--model')+1],model);
+  await assert.rejects(planTurn({prompt:'hello',model:'missing-astra',baseline,discover}),/not uniquely/);
+});
+
+test('status follows execution, dry-runs stay silent, display failures do not change success',async t=>{
+  const workspace=await temp(t),events=[];
+  const onStatus=e=>events.push(e);
+  const execute=async(exe,o)=>emit(o);
+  await runTurn({...opts(workspace),dryRun:true,onStatus},{discover,execute});assert.deepEqual(events,[]);
+  const result=await runTurn({...opts(workspace),onStatus},{discover,execute});
+  assert.equal(result.outcome,'completed');assert.deepEqual(events.map(e=>e.status),['starting','running','completed']);
+  for(const event of events){assert.equal(event.model,'chosen-model');assert.equal(event.effort,'max');}
+  const second=await runTurn({...opts(workspace),onStatus(){throw new Error('broken display');}},{discover,execute});
+  assert.equal(second.outcome,'completed');assert.equal((await readState(second.stateFile)).status,'idle');
+});
+
+test('failed or thrown execution displays uncertain and never completed',async t=>{
+  for(const throws of [false,true]){
+    const workspace=await temp(t),statuses=[];
+    const options={...opts(workspace),onStatus:e=>statuses.push(e.status)};
+    const execute=async()=>{if(throws)throw new Error('fixture failure');return {code:1};};
+    if(throws)await assert.rejects(runTurn(options,{discover,execute}),/fixture failure/);
+    else assert.equal((await runTurn(options,{discover,execute})).outcome,'uncertain');
+    assert.deepEqual(statuses,['starting','uncertain']);
+  }
+});
 test('dry-run produces no state file or inference',async t=>{
   const workspace=await temp(t);
   const result=await runTurn({...opts(workspace),dryRun:true},{discover,execute:()=>assert.fail('inference')});

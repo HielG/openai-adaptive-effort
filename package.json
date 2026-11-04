@@ -7,5 +7,5 @@
   "license": "MIT",
   "engines": { "node": ">=20" },
   "bin": { "codex-adaptive": "./bin/adaptive-effort.mjs" },
-  "scripts": { "test": "node --test tests/policy.test.mjs tests/runner.test.mjs tests/transport.test.mjs tests/package.test.mjs", "smoke": "node scripts/smoke-codex.mjs", "probe": "node scripts/probe-codex.mjs", "verify-plugin": "node scripts/verify-plugin.mjs" }
+  "scripts": { "test": "node --test tests/policy.test.mjs tests/runner.test.mjs tests/transport.test.mjs tests/package.test.mjs tests/display.test.mjs", "smoke": "node scripts/smoke-codex.mjs", "probe": "node scripts/probe-codex.mjs", "verify-plugin": "node scripts/verify-plugin.mjs" }
 }
