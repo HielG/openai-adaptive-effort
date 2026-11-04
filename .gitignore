@@ -2,6 +2,7 @@ node_modules/
 .adaptive-effort/
 *.tgz
 evidence/
+releases/
 __pycache__/
 *.pyc
 .env

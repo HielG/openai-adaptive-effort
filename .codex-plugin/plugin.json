@@ -1,6 +1,6 @@
 {
   "name": "openai-adaptive-effort",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Effort advice in desktop Codex and real per-turn routing in a companion CLI.",
   "author": { "name": "Hiel Gagarin" },
   "license": "MIT",

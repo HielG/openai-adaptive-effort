@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "openai-adaptive-effort",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Advisory effort classification for desktop Codex, with a companion runner that applies real per-turn reasoning settings.",
   "author": { "name": "Hiel Gagarin" },
   "license": "MIT",
